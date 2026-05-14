@@ -1,0 +1,28 @@
+# Dependencies
+/node_modules/
+
+# Build outputs
+/dist/
+/src-tauri/target/
+
+# Generated Tauri schemas
+/src-tauri/gen/schemas/
+
+# Local notes and design drafts
+/preparation/
+
+# Editor files
+/.idea/
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Logs
+*.log
+
+# OS metadata
+.DS_Store
+Thumbs.db
+Desktop.ini

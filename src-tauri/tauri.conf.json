@@ -1,0 +1,51 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "FocusTrail",
+  "version": "0.1.0",
+  "identifier": "com.focustrail.desktop",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "devUrl": "http://127.0.0.1:1420",
+    "beforeBuildCommand": "npm run build",
+    "frontendDist": "../dist"
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "icon": [
+      "icons/focustrail_icon_1024.png",
+      "icons/focustrail_icon.ico"
+    ]
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "FocusTrail",
+        "width": 913,
+        "height": 512,
+        "minWidth": 740,
+        "minHeight": 500,
+        "resizable": true,
+        "fullscreen": false
+      },
+      {
+        "label": "floating",
+        "title": "FocusTrail Timer",
+        "url": "index.html#floating",
+        "width": 296,
+        "height": 296,
+        "minWidth": 147,
+        "minHeight": 147,
+        "resizable": true,
+        "alwaysOnTop": true,
+        "visible": false,
+        "decorations": false,
+        "skipTaskbar": true
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  }
+}
