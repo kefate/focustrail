@@ -14,3 +14,11 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tauri = { version = "2", features = [] }
 uuid = { version = "1", features = ["v4"] }
+
+[profile.release]
+strip = "symbols"       # Remove symbol tables/debug symbols from the final binary.
+lto = true              # Enable link-time optimization for smaller/faster release builds.
+codegen-units = 1       # Prefer better optimization over faster compilation.
+
+[profile.release.build-override]
+opt-level = 0           # Keep build scripts and proc macros fast to compile.
