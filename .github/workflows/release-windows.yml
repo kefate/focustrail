@@ -1,0 +1,90 @@
+name: Release Windows
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build Tauri installers
+        shell: pwsh
+        run: |
+          $repo = $env:GITHUB_WORKSPACE
+          $cargoHome = if ($env:CARGO_HOME) { $env:CARGO_HOME } else { Join-Path $env:USERPROFILE ".cargo" }
+          $rustupHome = if ($env:RUSTUP_HOME) { $env:RUSTUP_HOME } else { Join-Path $env:USERPROFILE ".rustup" }
+
+          $env:RUSTFLAGS = "--remap-path-prefix=$repo=. --remap-path-prefix=$cargoHome=.cargo --remap-path-prefix=$rustupHome=.rustup"
+
+          npm run tauri -- build
+
+      - name: Scan release binary for path leaks
+        shell: pwsh
+        run: |
+          $exe = "src-tauri/target/release/focustrail.exe"
+          $patterns = @(
+            $env:GITHUB_WORKSPACE,
+            $env:USERPROFILE,
+            "C:\Users\runneradmin",
+            "\.cargo\registry",
+            "\.rustup",
+            "src-tauri\target"
+          )
+
+          $bytes = [System.IO.File]::ReadAllBytes($exe)
+          $text = [System.Text.Encoding]::Latin1.GetString($bytes)
+
+          $failed = $false
+          foreach ($pattern in $patterns) {
+            if ($pattern -and $text.Contains($pattern)) {
+              Write-Error "Potential path leak found: $pattern"
+              $failed = $true
+            }
+          }
+
+          if ($failed) {
+            exit 1
+          }
+
+      - name: Create or update GitHub Release
+        shell: pwsh
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $tag = $env:GITHUB_REF_NAME
+          $assets = @(
+            "src-tauri/target/release/bundle/nsis/FocusTrail_0.1.0_x64-setup.exe",
+            "src-tauri/target/release/bundle/msi/FocusTrail_0.1.0_x64_en-US.msi"
+          )
+
+          gh release view $tag *> $null
+          if ($LASTEXITCODE -eq 0) {
+            gh release upload $tag $assets --clobber
+          } else {
+            gh release create $tag $assets `
+              --draft `
+              --verify-tag `
+              --title "FocusTrail $tag" `
+              --notes "Windows installers for FocusTrail $tag."
+          }
