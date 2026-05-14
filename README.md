@@ -63,3 +63,14 @@ FocusTrail v0.1 does not include login, Git sync, GitHub OAuth, task management,
 - Local session logs are intentionally append-only.
 - Git sync is reserved for a future version and is not implemented in v0.1.
 - The debug executable is generated under `src-tauri/target/debug/focustrail.exe`.
+
+## Sample
+
+### Main Window
+
+<img src="docs/screenshots/main-window.png" width="600" alt="Main Window">
+
+### Floating Timer
+
+<img src="docs/screenshots/floating-timer.png" width="220" alt="Floating Timer">
+
