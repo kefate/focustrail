@@ -37,7 +37,7 @@ jobs:
 
           $env:RUSTFLAGS = "--remap-path-prefix=$repo=. --remap-path-prefix=$cargoHome=.cargo --remap-path-prefix=$rustupHome=.rustup"
 
-          npm run tauri -- build
+          npm run tauri -- build --bundles nsis
 
       - name: Scan release binary for path leaks
         shell: pwsh
@@ -73,10 +73,11 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           $tag = $env:GITHUB_REF_NAME
-          $assets = @(
-            "src-tauri/target/release/bundle/nsis/FocusTrail_0.1.0_x64-setup.exe",
-            "src-tauri/target/release/bundle/msi/FocusTrail_0.1.0_x64_en-US.msi"
-          )
+          $installers = @(Get-Item "src-tauri/target/release/bundle/nsis/FocusTrail_*_x64-setup.exe")
+          if ($installers.Count -ne 1) {
+            throw "Expected exactly one NSIS installer, found $($installers.Count)."
+          }
+          $assets = @($installers[0].FullName)
 
           gh release view $tag *> $null
           if ($LASTEXITCODE -eq 0) {
