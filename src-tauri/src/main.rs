@@ -8,6 +8,7 @@ use std::{
 };
 
 use tauri::{AppHandle, LogicalSize, Manager, RunEvent, Size, State, WindowEvent};
+use tauri_plugin_notification::NotificationExt;
 
 mod domain;
 mod stats;
@@ -32,7 +33,12 @@ fn get_timer_state(
     let (snapshot, records) = domain::snapshot_timer(&mut timer);
     drop(timer);
 
-    append_records(&app, records)?;
+    let should_notify = should_notify_session_completed(&records);
+    append_records(&app, &records)?;
+
+    if should_notify {
+        notify_session_completed(&app, &records);
+    }
 
     Ok(snapshot)
 }
@@ -80,7 +86,7 @@ fn cancel_focus_session(
     let (snapshot, records) = domain::cancel_timer(&mut timer)?;
     drop(timer);
 
-    append_records(&app, records)?;
+    append_records(&app, &records)?;
 
     Ok(snapshot)
 }
@@ -97,7 +103,7 @@ fn reset_focus_session(
     let (snapshot, records) = domain::save_and_reset_timer(&mut timer)?;
     drop(timer);
 
-    append_records(&app, records)?;
+    append_records(&app, &records)?;
 
     Ok(snapshot)
 }
@@ -170,12 +176,122 @@ fn get_daily_progress(app: AppHandle) -> Result<stats::DailyProgress, String> {
     Ok(stats::daily_progress(&records, &settings))
 }
 
-fn append_records(app: &AppHandle, records: Vec<domain::SessionRecord>) -> Result<(), String> {
+fn append_records(app: &AppHandle, records: &[domain::SessionRecord]) -> Result<(), String> {
     for record in records {
-        storage::append_session(app, &record)?;
+        storage::append_session(app, record)?;
     }
 
     Ok(())
+}
+
+fn should_notify_session_completed(records: &[domain::SessionRecord]) -> bool {
+    records.iter().any(|record| {
+        record.status == domain::SessionRecordStatus::Completed
+            && record.time_type == domain::SessionTimeType::Focus
+    })
+}
+
+fn notify_session_completed(app: &AppHandle, records: &[domain::SessionRecord]) {
+    let focus_seconds = records
+        .iter()
+        .filter(|record| {
+            record.status == domain::SessionRecordStatus::Completed
+                && record.time_type == domain::SessionTimeType::Focus
+        })
+        .map(|record| record.actual_seconds)
+        .sum::<u64>();
+    let duration = completed_duration_label(focus_seconds);
+    let body = if duration.is_empty() {
+        "Nice work. Your focus session is complete.".to_string()
+    } else {
+        format!("Nice work. You completed {} of focused time.", duration)
+    };
+    let notification = app
+        .notification()
+        .builder()
+        .title("Focus session complete")
+        .body(body);
+
+    #[cfg(not(target_os = "windows"))]
+    let notification = if let Some(sound_path) = notification_sound_path() {
+        notification.sound(sound_path.to_string_lossy().into_owned())
+    } else {
+        notification
+    };
+
+    let _ = notification.show();
+    play_session_completion_sound();
+}
+
+fn completed_duration_label(seconds: u64) -> String {
+    let minutes = seconds / 60;
+    if minutes > 0 {
+        return format!("{} minute{}", minutes, if minutes == 1 { "" } else { "s" });
+    }
+
+    if seconds > 0 {
+        return format!("{} second{}", seconds, if seconds == 1 { "" } else { "s" });
+    }
+
+    String::new()
+}
+
+#[cfg(target_os = "windows")]
+fn play_session_completion_sound() {
+    use std::os::windows::ffi::OsStrExt;
+    use windows_sys::Win32::Media::Audio::{
+        PlaySoundW, SND_ALIAS, SND_ASYNC, SND_FILENAME, SND_NODEFAULT, SND_SYSTEM,
+    };
+
+    if let Some(sound_path) = notification_sound_path() {
+        let sound_path = sound_path
+            .as_os_str()
+            .encode_wide()
+            .chain(std::iter::once(0))
+            .collect::<Vec<_>>();
+        let played = unsafe {
+            PlaySoundW(
+                sound_path.as_ptr(),
+                std::ptr::null_mut(),
+                SND_FILENAME | SND_ASYNC | SND_NODEFAULT | SND_SYSTEM,
+            )
+        };
+
+        if played != 0 {
+            return;
+        }
+    }
+
+    let alias = "SystemNotification"
+        .encode_utf16()
+        .chain(std::iter::once(0))
+        .collect::<Vec<_>>();
+    let _ = unsafe {
+        PlaySoundW(
+            alias.as_ptr(),
+            std::ptr::null_mut(),
+            SND_ALIAS | SND_ASYNC | SND_SYSTEM,
+        )
+    };
+}
+
+#[cfg(not(target_os = "windows"))]
+fn play_session_completion_sound() {}
+
+fn notification_sound_path() -> Option<std::path::PathBuf> {
+    #[cfg(target_os = "windows")]
+    {
+        let windir = std::env::var_os("WINDIR")?;
+        let sound_path = std::path::PathBuf::from(windir)
+            .join("Media")
+            .join("Windows Notify System Generic.wav");
+
+        if sound_path.exists() {
+            return Some(sound_path);
+        }
+    }
+
+    None
 }
 
 fn persist_active_timer_before_exit(app: &AppHandle) -> Result<(), String> {
@@ -192,7 +308,7 @@ fn persist_active_timer_before_exit(app: &AppHandle) -> Result<(), String> {
     }
 
     drop(timer);
-    append_records(app, records)
+    append_records(app, &records)
 }
 
 #[tauri::command]
@@ -308,6 +424,7 @@ fn main() {
     };
 
     tauri::Builder::default()
+        .plugin(tauri_plugin_notification::init())
         .manage(AppState::default())
         .setup(move |app| {
             let handle = app.handle().clone();

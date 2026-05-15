@@ -49,6 +49,7 @@ Only records with `status: "completed"` and `timeType: "focus"` count toward the
 - Configurable focus duration, optional break duration, start/pause/resume/cancel, and save-and-reset.
 - Floating timer window that stays on top, keeps a square resize ratio, can pause/resume, and can return to the main window.
 - Mutually exclusive main and floating windows.
+- Windows toast notification with sound when a focus session naturally completes.
 - Daily progress with daily goal, yesterday's completed focus time, today's completed focus time, remaining focus time, today's rested time, and streak count from yesterday.
 - Daily goal editor with hour-based goals, daily reset time, and weekend inclusion for streaks.
 - Local file storage with `settings.json` and monthly JSONL session logs.
@@ -56,7 +57,7 @@ Only records with `status: "completed"` and `timeType: "focus"` count toward the
 
 ## Not Supported Yet
 
-FocusTrail v0.1 does not include login, Git sync, GitHub OAuth, task management, project management, cloud sync, advanced reports, calendar views, sounds, or white noise.
+FocusTrail v0.1 does not include login, Git sync, GitHub OAuth, task management, project management, cloud sync, advanced reports, calendar views, or white noise.
 
 ## Development Notes
 
@@ -73,4 +74,3 @@ FocusTrail v0.1 does not include login, Git sync, GitHub OAuth, task management,
 ### Floating Timer
 
 <img src="docs/screenshots/floating-timer.png" width="220" alt="Floating Timer">
-
