@@ -1,6 +1,6 @@
 # FocusTrail
 
-FocusTrail is a Windows desktop focus timer MVP built with Tauri 2, React, and TypeScript. Version 0.1 provides a focused-session experience inspired by the Windows Clock focus sessions: a main timer window, an always-on-top floating timer, append-only local JSONL session logs, and daily progress stats.
+FocusTrail is a Windows desktop focus timer MVP built with Tauri 2, React, and TypeScript. Version 0.2 provides a focused-session experience inspired by the Windows Clock focus sessions: a main timer window, an always-on-top floating timer, append-only local JSONL session logs, daily progress stats, and Windows completion notifications.
 
 ## Getting Started
 
@@ -42,7 +42,7 @@ data/
 
 Only records with `status: "completed"` and `timeType: "focus"` count toward the daily goal, yesterday's completed time, and streaks. Break records are shown separately as today's rested time. Cancelled records are kept in the log but do not count toward progress. Daily progress does not delete historical logs; it uses the daily reset time in `settings.json` to determine the current reporting day.
 
-## v0.1 Features
+## Features
 
 - Main window with focus-session and daily-progress cards.
 - Focus timer states: `idle`, `running`, `paused`, `completed`, and `cancelled`.
@@ -57,12 +57,12 @@ Only records with `status: "completed"` and `timeType: "focus"` count toward the
 
 ## Not Supported Yet
 
-FocusTrail v0.1 does not include login, Git sync, GitHub OAuth, task management, project management, cloud sync, advanced reports, calendar views, or white noise.
+FocusTrail does not include login, Git sync, GitHub OAuth, task management, project management, cloud sync, advanced reports, calendar views, or white noise.
 
 ## Development Notes
 
 - Local session logs are intentionally append-only.
-- Git sync is reserved for a future version and is not implemented in v0.1.
+- Git sync is reserved for a future version and is not implemented yet.
 - The debug executable is generated under `src-tauri/target/debug/focustrail.exe`.
 
 ## Sample

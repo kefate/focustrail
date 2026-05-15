@@ -4,5 +4,5 @@ export interface GitSyncAdapter {
 }
 
 export function createGitSyncAdapter(): GitSyncAdapter {
-  throw new Error("Git sync is intentionally not implemented in v0.1.");
+  throw new Error("Git sync is intentionally not implemented yet.");
 }
