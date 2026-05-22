@@ -990,6 +990,7 @@ dependencies = [
  "tauri-build",
  "tauri-plugin-notification",
  "uuid",
+ "windows",
  "windows-sys 0.61.2",
 ]
 

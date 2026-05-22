@@ -5,6 +5,7 @@ import type { DailyProgress, Settings, TimerSnapshot } from "../domain/session";
 import { completedRatio } from "../stats/progress";
 import {
   cancelFocusSession,
+  configureGitSyncRepository,
   getDailyProgress,
   getSettings,
   pauseFocusSession,
@@ -25,6 +26,7 @@ const defaultSettings: Settings = {
   focusMinutes: 30,
   restMinutes: 5,
   skipRest: false,
+  gitSyncRepoPath: null,
 };
 
 export function MainWindow() {
@@ -38,6 +40,8 @@ export function MainWindow() {
   const [settings, setSettings] = useState<Settings>(defaultSettings);
   const [progress, setProgress] = useState<DailyProgress | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [syncNotice, setSyncNotice] = useState<string | null>(null);
+  const [syncBusy, setSyncBusy] = useState(false);
 
   const plannedMinutes = useMemo(() => clampMinutes(selectedMinutes), [selectedMinutes]);
 
@@ -80,6 +84,15 @@ export function MainWindow() {
       });
     }
   }, [timer.status]);
+
+  useEffect(() => {
+    if (!syncNotice) {
+      return;
+    }
+
+    const id = window.setTimeout(() => setSyncNotice(null), 3600);
+    return () => window.clearTimeout(id);
+  }, [syncNotice]);
 
   useEffect(() => {
     if (!menuOpen) {
@@ -155,10 +168,37 @@ export function MainWindow() {
     }
   }
 
+  async function handleConfigureGitSync() {
+    if (syncBusy) {
+      return;
+    }
+
+    setSyncBusy(true);
+    setSyncNotice(null);
+    try {
+      const next = await configureGitSyncRepository();
+      if (next) {
+        setSettings(next);
+        setActionError(null);
+        setSyncNotice("Git sync configured");
+      }
+    } catch (reason) {
+      setActionError(reason instanceof Error ? reason.message : String(reason));
+    } finally {
+      setSyncBusy(false);
+    }
+  }
+
   if (editingGoal) {
     return (
       <main className="desktop-main edit-screen">
         {(error || actionError) && <div className="error-banner">{error ?? actionError}</div>}
+        <GitSyncControl
+          configured={Boolean(settings.gitSyncRepoPath)}
+          busy={syncBusy}
+          notice={syncNotice}
+          onConfigure={() => void handleConfigureGitSync()}
+        />
         <GoalEditor
           settings={settings}
           onCancel={() => setEditingGoal(false)}
@@ -171,6 +211,12 @@ export function MainWindow() {
   return (
     <main className="desktop-main">
       {(error || actionError) && <div className="error-banner">{error ?? actionError}</div>}
+      <GitSyncControl
+        configured={Boolean(settings.gitSyncRepoPath)}
+        busy={syncBusy}
+        notice={syncNotice}
+        onConfigure={() => void handleConfigureGitSync()}
+      />
       <section className="dashboard-grid">
         <FocusCard
           timer={timer}
@@ -462,6 +508,31 @@ function ProgressCard({ settings, progress, onEdit }: ProgressCardProps) {
         <MiniStat label="Streak" value={`${progress?.streakDays ?? 0} days`} />
       </div>
     </article>
+  );
+}
+
+interface GitSyncControlProps {
+  configured: boolean;
+  busy: boolean;
+  notice: string | null;
+  onConfigure(): void;
+}
+
+function GitSyncControl({ configured, busy, notice, onConfigure }: GitSyncControlProps) {
+  return (
+    <div className="git-sync-control">
+      <button
+        className={configured ? "git-sync-button configured" : "git-sync-button"}
+        onClick={onConfigure}
+        disabled={busy}
+        aria-label="Configure Git sync"
+        title={configured ? "Git sync configured" : "Configure Git sync"}
+      >
+        <span aria-hidden="true">⚙</span>
+        <span className="git-sync-dot" aria-hidden="true" />
+      </button>
+      {notice && <span className="git-sync-notice">{notice}</span>}
+    </div>
   );
 }
 

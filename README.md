@@ -1,6 +1,6 @@
 # FocusTrail
 
-FocusTrail is a Windows desktop focus timer MVP built with Tauri 2, React, and TypeScript. Version 0.2 provides a focused-session experience inspired by the Windows Clock focus sessions: a main timer window, an always-on-top floating timer, append-only local JSONL session logs, daily progress stats, and Windows completion notifications.
+FocusTrail is a Windows desktop focus timer MVP built with Tauri 2, React, and TypeScript. Latest version provides a focused-session experience inspired by the Windows Clock focus sessions: a main timer window, an always-on-top floating timer, append-only local JSONL session logs, optional Git-backed record sync, daily progress stats, and Windows completion notifications.
 
 ## Getting Started
 
@@ -34,6 +34,7 @@ The data directory is organized as:
 ```text
 data/
   settings.json
+  focustrail-sync.log
   sessions/
     2026-05.jsonl
 ```
@@ -41,6 +42,14 @@ data/
 `sessions` uses append-only JSONL. Each focus or break segment is stored as one JSON line and is distinguished by `timeType` (`focus` or `rest`). Each record has a globally unique `id`; records from the same focus session share the same `sessionId`.
 
 Only records with `status: "completed"` and `timeType: "focus"` count toward the daily goal, yesterday's completed time, and streaks. Break records are shown separately as today's rested time. Cancelled records are kept in the log but do not count toward progress. Daily progress does not delete historical logs; it uses the daily reset time in `settings.json` to determine the current reporting day.
+
+## Git Sync
+
+FocusTrail can sync local session records into a user-selected Git repository. Use the settings button in the lower-left corner of the main window to choose a folder. The selected folder must be the root of a Git repository, have a remote configured, and have an upstream branch that can be pushed.
+
+After local records are saved, FocusTrail copies monthly `*.jsonl` session logs into `focustrail-records/sessions/` inside the configured repository, commits the copied record changes, and pushes them to the remote branch. Commit messages include the focus or rest type, status, planned duration, actual duration, and start/end times for the recorded segment, without including local computer paths.
+
+Sync work runs in the background so timer reset, window closing, and other app actions can continue. FocusTrail only stages `focustrail-records/sessions/*.jsonl`; if that sync path already has uncommitted, staged, or untracked changes, the sync is skipped to avoid mixing manual edits into an automatic commit. Each sync attempt appends its result to `focustrail-sync.log`.
 
 ## Features
 
@@ -53,16 +62,18 @@ Only records with `status: "completed"` and `timeType: "focus"` count toward the
 - Daily progress with daily goal, yesterday's completed focus time, today's completed focus time, remaining focus time, today's rested time, and streak count from yesterday.
 - Daily goal editor with hour-based goals, daily reset time, and weekend inclusion for streaks.
 - Local file storage with `settings.json` and monthly JSONL session logs.
+- Optional Git sync for JSONL session logs.
 - Single-instance behavior: launching the app again focuses the existing main window.
 
 ## Not Supported Yet
 
-FocusTrail does not include login, Git sync, GitHub OAuth, task management, project management, cloud sync, advanced reports, calendar views, or white noise.
+FocusTrail does not include login, GitHub OAuth, task management, project management, cloud sync, advanced reports, calendar views, or white noise.
 
 ## Development Notes
 
 - Local session logs are intentionally append-only.
-- Git sync is reserved for a future version and is not implemented yet.
+- Git sync is limited to copied JSONL session logs under `focustrail-records/sessions/`.
+- Background sync results are appended to `focustrail-sync.log` in the app data directory.
 - The debug executable is generated under `src-tauri/target/debug/focustrail.exe`.
 
 ## Sample

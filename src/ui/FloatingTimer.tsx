@@ -25,6 +25,7 @@ export function FloatingTimer() {
     focusMinutes: 30,
     restMinutes: 5,
     skipRest: false,
+    gitSyncRepoPath: null,
   });
   const [menuOpen, setMenuOpen] = useState(false);
   const [controlsVisible, setControlsVisible] = useState(false);

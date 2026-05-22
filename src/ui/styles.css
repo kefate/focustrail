@@ -763,6 +763,64 @@ select {
   font-size: 13px;
 }
 
+.git-sync-control {
+  position: fixed;
+  left: 18px;
+  bottom: 10px;
+  z-index: 18;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: calc(100vw - 36px);
+}
+
+.git-sync-button {
+  position: relative;
+  display: grid;
+  width: 32px;
+  height: 32px;
+  min-width: 32px;
+  place-items: center;
+  border: 1px solid #d2d2d2;
+  border-radius: 4px;
+  background: #ffffff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+  font-size: 18px;
+  line-height: 1;
+}
+
+.git-sync-button:hover {
+  background: #eeeeee;
+}
+
+.git-sync-dot {
+  position: absolute;
+  right: 5px;
+  bottom: 5px;
+  width: 6px;
+  height: 6px;
+  border: 1px solid #ffffff;
+  border-radius: 50%;
+  background: #9f9f9f;
+}
+
+.git-sync-button.configured .git-sync-dot {
+  background: #20c7a4;
+}
+
+.git-sync-notice {
+  max-width: min(260px, calc(100vw - 76px));
+  overflow: hidden;
+  padding: 7px 9px;
+  border: 1px solid #d7e5dc;
+  border-radius: 5px;
+  background: #f2fbf7;
+  color: #245f46;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .floating-shell {
   display: grid;
   grid-template-rows: clamp(24px, 11vmin, 32px) minmax(0, 1fr);
@@ -935,6 +993,11 @@ select {
   .desktop-main {
     padding: 16px;
     overflow: hidden;
+  }
+
+  .git-sync-control {
+    left: 16px;
+    bottom: 8px;
   }
 
   .dashboard-grid {

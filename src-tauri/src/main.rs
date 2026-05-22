@@ -11,6 +11,7 @@ use tauri::{AppHandle, LogicalSize, Manager, RunEvent, Size, State, WindowEvent}
 use tauri_plugin_notification::NotificationExt;
 
 mod domain;
+mod git_sync;
 mod stats;
 mod storage;
 
@@ -34,7 +35,7 @@ fn get_timer_state(
     drop(timer);
 
     let should_notify = should_notify_session_completed(&records);
-    append_records(&app, &records)?;
+    append_records(&app, &records, git_sync::SyncMode::Background)?;
 
     if should_notify {
         notify_session_completed(&app, &records);
@@ -86,7 +87,7 @@ fn cancel_focus_session(
     let (snapshot, records) = domain::cancel_timer(&mut timer)?;
     drop(timer);
 
-    append_records(&app, &records)?;
+    append_records(&app, &records, git_sync::SyncMode::Background)?;
 
     Ok(snapshot)
 }
@@ -103,7 +104,7 @@ fn reset_focus_session(
     let (snapshot, records) = domain::save_and_reset_timer(&mut timer)?;
     drop(timer);
 
-    append_records(&app, &records)?;
+    append_records(&app, &records, git_sync::SyncMode::Background)?;
 
     Ok(snapshot)
 }
@@ -128,6 +129,7 @@ fn update_daily_goal(
         focus_minutes: existing.focus_minutes,
         rest_minutes: existing.rest_minutes,
         skip_rest: existing.skip_rest,
+        git_sync_repo_path: existing.git_sync_repo_path,
     };
     storage::save_settings(&app, &settings)?;
     Ok(settings)
@@ -155,6 +157,7 @@ fn update_focus_preferences(
         focus_minutes: normalized_focus_minutes,
         rest_minutes: normalized_rest_minutes,
         skip_rest,
+        git_sync_repo_path: existing.git_sync_repo_path,
     };
     storage::save_settings(&app, &settings)?;
     let mut timer = state
@@ -176,9 +179,22 @@ fn get_daily_progress(app: AppHandle) -> Result<stats::DailyProgress, String> {
     Ok(stats::daily_progress(&records, &settings))
 }
 
-fn append_records(app: &AppHandle, records: &[domain::SessionRecord]) -> Result<(), String> {
+#[tauri::command]
+fn configure_git_sync_repository(app: AppHandle) -> Result<Option<storage::Settings>, String> {
+    git_sync::configure_repository(&app)
+}
+
+fn append_records(
+    app: &AppHandle,
+    records: &[domain::SessionRecord],
+    sync_mode: git_sync::SyncMode,
+) -> Result<(), String> {
     for record in records {
         storage::append_session(app, record)?;
+    }
+
+    if !records.is_empty() {
+        git_sync::schedule_records_sync(app, records, sync_mode)?;
     }
 
     Ok(())
@@ -308,7 +324,7 @@ fn persist_active_timer_before_exit(app: &AppHandle) -> Result<(), String> {
     }
 
     drop(timer);
-    append_records(app, &records)
+    append_records(app, &records, git_sync::SyncMode::Detached)
 }
 
 #[tauri::command]
@@ -419,6 +435,15 @@ fn listen_for_second_instances(app: AppHandle, listener: TcpListener) {
 }
 
 fn main() {
+    match git_sync::run_helper_from_args() {
+        Ok(true) => return,
+        Ok(false) => {}
+        Err(error) => {
+            eprintln!("FocusTrail Git sync helper failed: {error}");
+            return;
+        }
+    }
+
     let Some(single_instance_listener) = claim_single_instance() else {
         return;
     };
@@ -451,6 +476,7 @@ fn main() {
             update_daily_goal,
             update_focus_preferences,
             get_daily_progress,
+            configure_git_sync_repository,
             show_floating_timer,
             hide_floating_timer,
             focus_main_window,

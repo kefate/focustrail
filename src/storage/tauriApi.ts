@@ -29,6 +29,10 @@ export function getSettings(): Promise<Settings> {
   return invoke("get_settings");
 }
 
+export function configureGitSyncRepository(): Promise<Settings | null> {
+  return invoke("configure_git_sync_repository");
+}
+
 export function updateDailyGoal(
   dailyGoalMinutes: number,
   dailyResetMinutes: number,

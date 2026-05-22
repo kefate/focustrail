@@ -136,6 +136,7 @@ mod tests {
             focus_minutes: 30,
             rest_minutes: 5,
             skip_rest: false,
+            git_sync_repo_path: None,
         }
     }
 

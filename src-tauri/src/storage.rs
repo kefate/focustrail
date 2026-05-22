@@ -23,6 +23,8 @@ pub struct Settings {
     pub rest_minutes: u32,
     #[serde(default)]
     pub skip_rest: bool,
+    #[serde(default)]
+    pub git_sync_repo_path: Option<String>,
 }
 
 impl Default for Settings {
@@ -34,6 +36,7 @@ impl Default for Settings {
             focus_minutes: 30,
             rest_minutes: 5,
             skip_rest: false,
+            git_sync_repo_path: None,
         }
     }
 }
@@ -137,8 +140,12 @@ fn settings_path(app: &AppHandle) -> Result<PathBuf, String> {
     Ok(data_dir(app)?.join("settings.json"))
 }
 
-fn sessions_dir(app: &AppHandle) -> Result<PathBuf, String> {
+pub(crate) fn sessions_dir(app: &AppHandle) -> Result<PathBuf, String> {
     Ok(data_dir(app)?.join("sessions"))
+}
+
+pub(crate) fn sync_log_path(app: &AppHandle) -> Result<PathBuf, String> {
+    Ok(data_dir(app)?.join("focustrail-sync.log"))
 }
 
 fn session_file_path(app: &AppHandle, record: &SessionRecord) -> Result<PathBuf, String> {

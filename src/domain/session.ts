@@ -24,6 +24,7 @@ export interface Settings {
   focusMinutes: number;
   restMinutes: number;
   skipRest: boolean;
+  gitSyncRepoPath: string | null;
 }
 
 export interface DailyProgress {

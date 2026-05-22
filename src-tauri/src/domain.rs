@@ -412,7 +412,7 @@ fn build_records(
             status,
             started_at,
             ended_at,
-            timer.planned_minutes,
+            timer.rest_minutes,
             rest_seconds,
         ));
     }
@@ -427,12 +427,19 @@ fn build_records(
             status,
             started_at,
             ended_at,
-            timer.planned_minutes,
+            planned_minutes_for_phase(timer),
             0,
         ));
     }
 
     Ok(records)
+}
+
+fn planned_minutes_for_phase(timer: &TimerState) -> u32 {
+    match timer.phase {
+        TimerPhase::Focus => timer.planned_minutes,
+        TimerPhase::Rest => timer.rest_minutes,
+    }
 }
 
 fn build_phase_record(
@@ -484,4 +491,46 @@ fn subtract_seconds(now_utc: DateTime<Utc>, seconds: u64) -> DateTime<Utc> {
 
 fn default_session_time_type() -> SessionTimeType {
     SessionTimeType::Focus
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn rest_records_use_rest_planned_minutes() {
+        let ended_at = Local::now();
+        let mut timer = TimerState {
+            status: TimerLifecycleStatus::Completed,
+            session_id: Some("test-session".to_string()),
+            started_at: Some(ended_at - chrono::Duration::minutes(30)),
+            ended_at: Some(ended_at),
+            planned_minutes: 25,
+            rest_minutes: 5,
+            phase: TimerPhase::Rest,
+            accumulated_focus_seconds: 25 * 60,
+            accumulated_rest_seconds: 5 * 60,
+            running_started_at: None,
+            paused_at: None,
+        };
+
+        let records = build_records(&timer, SessionRecordStatus::Completed, Utc::now())
+            .expect("records should be created");
+        let focus_record = records
+            .iter()
+            .find(|record| record.time_type == SessionTimeType::Focus)
+            .expect("focus record should exist");
+        let rest_record = records
+            .iter()
+            .find(|record| record.time_type == SessionTimeType::Rest)
+            .expect("rest record should exist");
+
+        assert_eq!(focus_record.planned_minutes, 25);
+        assert_eq!(rest_record.planned_minutes, 5);
+
+        timer.phase = TimerPhase::Focus;
+        assert_eq!(planned_minutes_for_phase(&timer), 25);
+        timer.phase = TimerPhase::Rest;
+        assert_eq!(planned_minutes_for_phase(&timer), 5);
+    }
 }
