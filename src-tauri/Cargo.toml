@@ -1,6 +1,6 @@
 [package]
 name = "focustrail"
-version = "0.3.0"
+version = "0.4.0"
 description = "FocusTrail desktop focus timer"
 authors = ["FocusTrail"]
 edition = "2021"
