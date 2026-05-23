@@ -1,5 +1,6 @@
 export type TimerStatus = "idle" | "running" | "paused" | "completed" | "cancelled";
 export type TimerPhase = "focus" | "rest";
+export type RestOverlayMode = "blur" | "image" | "html";
 
 export interface TimerSnapshot {
   status: TimerStatus;
@@ -24,6 +25,9 @@ export interface Settings {
   focusMinutes: number;
   restMinutes: number;
   skipRest: boolean;
+  restOverlayMode: RestOverlayMode;
+  restOverlayImage: string | null;
+  restOverlayHtml: string | null;
   gitSyncRepoPath: string | null;
 }
 

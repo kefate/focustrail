@@ -1,7 +1,15 @@
 import { FloatingTimer } from "./FloatingTimer";
 import { MainWindow } from "./MainWindow";
+import { RestOverlay } from "./RestOverlay";
 
 export function App() {
-  const isFloatingWindow = window.location.hash === "#floating";
-  return isFloatingWindow ? <FloatingTimer /> : <MainWindow />;
+  if (window.location.hash === "#floating") {
+    return <FloatingTimer />;
+  }
+
+  if (window.location.hash === "#rest-overlay") {
+    return <RestOverlay />;
+  }
+
+  return <MainWindow />;
 }

@@ -9,6 +9,14 @@ use tauri::{AppHandle, Manager};
 
 use crate::domain::SessionRecord;
 
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum RestOverlayMode {
+    Blur,
+    Image,
+    Html,
+}
+
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Settings {
@@ -23,6 +31,12 @@ pub struct Settings {
     pub rest_minutes: u32,
     #[serde(default)]
     pub skip_rest: bool,
+    #[serde(default = "default_rest_overlay_mode")]
+    pub rest_overlay_mode: RestOverlayMode,
+    #[serde(default)]
+    pub rest_overlay_image: Option<String>,
+    #[serde(default)]
+    pub rest_overlay_html: Option<String>,
     #[serde(default)]
     pub git_sync_repo_path: Option<String>,
 }
@@ -36,6 +50,9 @@ impl Default for Settings {
             focus_minutes: 30,
             rest_minutes: 5,
             skip_rest: false,
+            rest_overlay_mode: RestOverlayMode::Blur,
+            rest_overlay_image: None,
+            rest_overlay_html: None,
             git_sync_repo_path: None,
         }
     }
@@ -69,6 +86,8 @@ pub fn load_settings(app: &AppHandle) -> Result<Settings, String> {
     } else {
         settings.rest_minutes.clamp(1, 120)
     };
+    settings.rest_overlay_image = normalize_optional_text(settings.rest_overlay_image);
+    settings.rest_overlay_html = normalize_optional_text(settings.rest_overlay_html);
     Ok(settings)
 }
 
@@ -163,6 +182,21 @@ fn default_focus_minutes() -> u32 {
 
 fn default_rest_minutes() -> u32 {
     5
+}
+
+fn default_rest_overlay_mode() -> RestOverlayMode {
+    RestOverlayMode::Blur
+}
+
+pub fn normalize_optional_text(value: Option<String>) -> Option<String> {
+    value.and_then(|text| {
+        let trimmed = text.trim().to_string();
+        if trimmed.is_empty() {
+            None
+        } else {
+            Some(trimmed)
+        }
+    })
 }
 
 pub fn round_goal_to_hours(minutes: u32) -> u32 {

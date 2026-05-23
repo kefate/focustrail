@@ -12,12 +12,14 @@ import {
 } from "../storage/tauriApi";
 import type { Settings } from "../domain/session";
 import { TimerDial } from "./TimerDial";
+import { useRestOverlayTrigger } from "./useRestOverlayTrigger";
 import { useTimerState } from "./useTimerState";
 
 const floatingMinSize = 147;
 
 export function FloatingTimer() {
   const { timer, setTimer } = useTimerState(300);
+  useRestOverlayTrigger(timer);
   const [settings, setSettings] = useState<Settings>({
     dailyGoalMinutes: 240,
     dailyResetMinutes: 0,
@@ -25,6 +27,9 @@ export function FloatingTimer() {
     focusMinutes: 30,
     restMinutes: 5,
     skipRest: false,
+    restOverlayMode: "blur",
+    restOverlayImage: null,
+    restOverlayHtml: null,
     gitSyncRepoPath: null,
   });
   const [menuOpen, setMenuOpen] = useState(false);

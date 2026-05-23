@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import { clampMinutes, formatHoursMinutes, splitHoursMinutes } from "../domain/session";
-import type { DailyProgress, Settings, TimerSnapshot } from "../domain/session";
+import type { DailyProgress, RestOverlayMode, Settings, TimerSnapshot } from "../domain/session";
 import { completedRatio } from "../stats/progress";
 import {
   cancelFocusSession,
+  chooseRestOverlayHtml,
+  chooseRestOverlayImage,
   configureGitSyncRepository,
   getDailyProgress,
   getSettings,
@@ -15,8 +17,10 @@ import {
   startFocusSession,
   updateDailyGoal,
   updateFocusPreferences,
+  updateRestOverlayPreferences,
 } from "../storage/tauriApi";
 import { TimerDial } from "./TimerDial";
+import { useRestOverlayTrigger } from "./useRestOverlayTrigger";
 import { useTimerState } from "./useTimerState";
 
 const defaultSettings: Settings = {
@@ -26,16 +30,21 @@ const defaultSettings: Settings = {
   focusMinutes: 30,
   restMinutes: 5,
   skipRest: false,
+  restOverlayMode: "blur",
+  restOverlayImage: null,
+  restOverlayHtml: null,
   gitSyncRepoPath: null,
 };
 
 export function MainWindow() {
   const { timer, error, setTimer } = useTimerState(500);
+  useRestOverlayTrigger(timer);
   const [selectedMinutes, setSelectedMinutes] = useState(30);
   const [customMinutes, setCustomMinutes] = useState(30);
   const [restMinutes, setRestMinutes] = useState(5);
   const [skipRest, setSkipRest] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [editingGoal, setEditingGoal] = useState(false);
   const [settings, setSettings] = useState<Settings>(defaultSettings);
   const [progress, setProgress] = useState<DailyProgress | null>(null);
@@ -116,6 +125,28 @@ export function MainWindow() {
     return () => window.removeEventListener("pointerdown", closeMenuOnOutsideClick);
   }, [menuOpen]);
 
+  useEffect(() => {
+    if (!settingsOpen) {
+      return;
+    }
+
+    function closeSettingsOnOutsideClick(event: PointerEvent) {
+      const target = event.target;
+      if (!(target instanceof Element)) {
+        return;
+      }
+
+      if (target.closest("[data-settings-control]")) {
+        return;
+      }
+
+      setSettingsOpen(false);
+    }
+
+    window.addEventListener("pointerdown", closeSettingsOnOutsideClick);
+    return () => window.removeEventListener("pointerdown", closeSettingsOnOutsideClick);
+  }, [settingsOpen]);
+
   async function handleSwitchToFloating() {
     try {
       await persistFocusPreferences(plannedMinutes, restMinutes, skipRest);
@@ -156,6 +187,40 @@ export function MainWindow() {
     });
   }
 
+  async function handleRestOverlayModeChange(mode: RestOverlayMode) {
+    if (mode === "image") {
+      await handleChooseRestOverlayImage();
+      return;
+    }
+
+    if (mode === "html") {
+      await handleChooseRestOverlayHtml();
+      return;
+    }
+
+    await runSettingsUpdate(() => updateRestOverlayPreferences(mode, settings.restOverlayImage, settings.restOverlayHtml));
+  }
+
+  async function handleChooseRestOverlayImage() {
+    await runSettingsUpdate(chooseRestOverlayImage);
+  }
+
+  async function handleChooseRestOverlayHtml() {
+    await runSettingsUpdate(chooseRestOverlayHtml);
+  }
+
+  async function runSettingsUpdate(action: () => Promise<Settings | null>) {
+    try {
+      const next = await action();
+      if (next) {
+        setSettings(next);
+      }
+      setActionError(null);
+    } catch (reason) {
+      setActionError(reason instanceof Error ? reason.message : String(reason));
+    }
+  }
+
   async function handleSaveGoal(dailyGoalMinutes: number, dailyResetMinutes: number, includeWeekendsInStreak: boolean) {
     try {
       const next = await updateDailyGoal(dailyGoalMinutes, dailyResetMinutes, includeWeekendsInStreak);
@@ -193,11 +258,16 @@ export function MainWindow() {
     return (
       <main className="desktop-main edit-screen">
         {(error || actionError) && <div className="error-banner">{error ?? actionError}</div>}
-        <GitSyncControl
-          configured={Boolean(settings.gitSyncRepoPath)}
+        <SettingsControl
+          settings={settings}
+          open={settingsOpen}
           busy={syncBusy}
           notice={syncNotice}
+          onToggle={() => setSettingsOpen((open) => !open)}
           onConfigure={() => void handleConfigureGitSync()}
+          onRestOverlayModeChange={(mode) => void handleRestOverlayModeChange(mode)}
+          onChooseRestOverlayImage={() => void handleChooseRestOverlayImage()}
+          onChooseRestOverlayHtml={() => void handleChooseRestOverlayHtml()}
         />
         <GoalEditor
           settings={settings}
@@ -211,11 +281,16 @@ export function MainWindow() {
   return (
     <main className="desktop-main">
       {(error || actionError) && <div className="error-banner">{error ?? actionError}</div>}
-      <GitSyncControl
-        configured={Boolean(settings.gitSyncRepoPath)}
+      <SettingsControl
+        settings={settings}
+        open={settingsOpen}
         busy={syncBusy}
         notice={syncNotice}
+        onToggle={() => setSettingsOpen((open) => !open)}
         onConfigure={() => void handleConfigureGitSync()}
+        onRestOverlayModeChange={(mode) => void handleRestOverlayModeChange(mode)}
+        onChooseRestOverlayImage={() => void handleChooseRestOverlayImage()}
+        onChooseRestOverlayHtml={() => void handleChooseRestOverlayHtml()}
       />
       <section className="dashboard-grid">
         <FocusCard
@@ -511,29 +586,106 @@ function ProgressCard({ settings, progress, onEdit }: ProgressCardProps) {
   );
 }
 
-interface GitSyncControlProps {
-  configured: boolean;
+interface SettingsControlProps {
+  settings: Settings;
+  open: boolean;
   busy: boolean;
   notice: string | null;
+  onToggle(): void;
   onConfigure(): void;
+  onRestOverlayModeChange(mode: RestOverlayMode): void;
+  onChooseRestOverlayImage(): void;
+  onChooseRestOverlayHtml(): void;
 }
 
-function GitSyncControl({ configured, busy, notice, onConfigure }: GitSyncControlProps) {
+function SettingsControl({
+  settings,
+  open,
+  busy,
+  notice,
+  onToggle,
+  onConfigure,
+  onRestOverlayModeChange,
+  onChooseRestOverlayImage,
+  onChooseRestOverlayHtml,
+}: SettingsControlProps) {
+  const configured = Boolean(settings.gitSyncRepoPath);
+
   return (
-    <div className="git-sync-control">
+    <div className="settings-control" data-settings-control>
       <button
-        className={configured ? "git-sync-button configured" : "git-sync-button"}
-        onClick={onConfigure}
-        disabled={busy}
-        aria-label="Configure Git sync"
-        title={configured ? "Git sync configured" : "Configure Git sync"}
+        className={configured ? "settings-trigger configured" : "settings-trigger"}
+        onClick={onToggle}
+        aria-label="Open settings"
+        title="Settings"
+        aria-expanded={open}
       >
         <span aria-hidden="true">⚙</span>
-        <span className="git-sync-dot" aria-hidden="true" />
+        <span className="settings-status-dot" aria-hidden="true" />
       </button>
-      {notice && <span className="git-sync-notice">{notice}</span>}
+
+      {open && (
+        <div className="settings-popover">
+          <section className="settings-section">
+            <header>
+              <span>Git sync</span>
+              <button onClick={onConfigure} disabled={busy}>
+                {configured ? "Change" : "Select"}
+              </button>
+            </header>
+            <p title={settings.gitSyncRepoPath ?? undefined}>{configured ? displayPath(settings.gitSyncRepoPath) : "Not configured"}</p>
+            {notice && <span className="settings-notice">{notice}</span>}
+          </section>
+
+          <section className="settings-section">
+            <header>
+              <span>Rest screen</span>
+            </header>
+            <div className="rest-screen-modes" aria-label="Rest screen mode">
+              <button className={settings.restOverlayMode === "blur" ? "selected" : ""} onClick={() => onRestOverlayModeChange("blur")}>
+                Blur
+              </button>
+              <button className={settings.restOverlayMode === "image" ? "selected" : ""} onClick={onChooseRestOverlayImage}>
+                Image
+              </button>
+              <button className={settings.restOverlayMode === "html" ? "selected" : ""} onClick={onChooseRestOverlayHtml}>
+                HTML
+              </button>
+            </div>
+            <p title={restOverlayPath(settings) ?? undefined}>{restOverlayLabel(settings)}</p>
+          </section>
+        </div>
+      )}
     </div>
   );
+}
+
+function displayPath(path: string | null): string {
+  if (!path) {
+    return "";
+  }
+
+  return path.split(/[\\/]/).filter(Boolean).pop() ?? path;
+}
+
+function restOverlayPath(settings: Settings): string | null {
+  if (settings.restOverlayMode === "image") {
+    return settings.restOverlayImage;
+  }
+
+  if (settings.restOverlayMode === "html") {
+    return settings.restOverlayHtml;
+  }
+
+  return null;
+}
+
+function restOverlayLabel(settings: Settings): string {
+  if (settings.restOverlayMode === "blur") {
+    return "Default blur";
+  }
+
+  return displayPath(restOverlayPath(settings)) || "No file selected";
 }
 
 interface CardHeaderProps {

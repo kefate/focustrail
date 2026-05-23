@@ -1,5 +1,11 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { DailyProgress, Settings, TimerSnapshot } from "../domain/session";
+import type { DailyProgress, RestOverlayMode, Settings, TimerSnapshot } from "../domain/session";
+
+export interface RestOverlayRequest {
+  requestId: number;
+  visible: boolean;
+  durationSeconds: number;
+}
 
 export function getTimerState(): Promise<TimerSnapshot> {
   return invoke("get_timer_state");
@@ -45,6 +51,30 @@ export function updateFocusPreferences(focusMinutes: number, restMinutes: number
   return invoke("update_focus_preferences", { focusMinutes, restMinutes, skipRest });
 }
 
+export function updateRestOverlayPreferences(
+  restOverlayMode: RestOverlayMode,
+  restOverlayImage: string | null,
+  restOverlayHtml: string | null,
+): Promise<Settings> {
+  return invoke("update_rest_overlay_preferences", { restOverlayMode, restOverlayImage, restOverlayHtml });
+}
+
+export function chooseRestOverlayImage(): Promise<Settings | null> {
+  return invoke("choose_rest_overlay_image");
+}
+
+export function chooseRestOverlayHtml(): Promise<Settings | null> {
+  return invoke("choose_rest_overlay_html");
+}
+
+export function readRestOverlayHtml(): Promise<string | null> {
+  return invoke("read_rest_overlay_html");
+}
+
+export function readRestOverlayImageDataUrl(): Promise<string | null> {
+  return invoke("read_rest_overlay_image_data_url");
+}
+
 export function getDailyProgress(): Promise<DailyProgress> {
   return invoke("get_daily_progress");
 }
@@ -55,6 +85,18 @@ export function showFloatingTimer(): Promise<void> {
 
 export function hideFloatingTimer(): Promise<void> {
   return invoke("hide_floating_timer");
+}
+
+export function showRestOverlay(durationSeconds: number): Promise<RestOverlayRequest> {
+  return invoke("show_rest_overlay", { durationSeconds });
+}
+
+export function hideRestOverlay(): Promise<void> {
+  return invoke("hide_rest_overlay");
+}
+
+export function getRestOverlayRequest(): Promise<RestOverlayRequest> {
+  return invoke("get_rest_overlay_request");
 }
 
 export function focusMainWindow(): Promise<void> {

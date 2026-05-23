@@ -7,10 +7,11 @@ use std::{
     thread,
 };
 
-use tauri::{AppHandle, LogicalSize, Manager, RunEvent, Size, State, WindowEvent};
-use tauri_plugin_notification::NotificationExt;
+use serde::Serialize;
+use tauri::{AppHandle, Emitter, LogicalSize, Manager, RunEvent, Size, State, WindowEvent};
 
 mod domain;
+mod file_picker;
 mod git_sync;
 mod stats;
 mod storage;
@@ -18,9 +19,29 @@ mod storage;
 #[derive(Default)]
 struct AppState {
     timer: Mutex<domain::TimerState>,
+    rest_overlay: Mutex<RestOverlayRuntime>,
+}
+
+#[derive(Default)]
+struct RestOverlayRuntime {
+    request_id: u64,
+    visible: bool,
+    duration_seconds: u32,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct RestOverlayRequest {
+    request_id: u64,
+    visible: bool,
+    duration_seconds: u32,
 }
 
 const SINGLE_INSTANCE_ADDR: &str = "127.0.0.1:47631";
+const REST_OVERLAY_WINDOW_LABEL: &str = "rest-overlay";
+const REST_OVERLAY_SHOW_EVENT: &str = "rest-overlay:show";
+const DEFAULT_SKIPPED_REST_OVERLAY_SECONDS: u32 = 3 * 60;
+const MAX_REST_OVERLAY_SECONDS: u32 = 120 * 60;
 
 #[tauri::command]
 fn get_timer_state(
@@ -34,12 +55,7 @@ fn get_timer_state(
     let (snapshot, records) = domain::snapshot_timer(&mut timer);
     drop(timer);
 
-    let should_notify = should_notify_session_completed(&records);
     append_records(&app, &records, git_sync::SyncMode::Background)?;
-
-    if should_notify {
-        notify_session_completed(&app, &records);
-    }
 
     Ok(snapshot)
 }
@@ -121,16 +137,10 @@ fn update_daily_goal(
     daily_reset_minutes: u32,
     include_weekends_in_streak: bool,
 ) -> Result<storage::Settings, String> {
-    let existing = storage::load_settings(&app)?;
-    let settings = storage::Settings {
-        daily_goal_minutes: storage::round_goal_to_hours(daily_goal_minutes),
-        daily_reset_minutes: storage::normalize_daily_reset_minutes(daily_reset_minutes),
-        include_weekends_in_streak,
-        focus_minutes: existing.focus_minutes,
-        rest_minutes: existing.rest_minutes,
-        skip_rest: existing.skip_rest,
-        git_sync_repo_path: existing.git_sync_repo_path,
-    };
+    let mut settings = storage::load_settings(&app)?;
+    settings.daily_goal_minutes = storage::round_goal_to_hours(daily_goal_minutes);
+    settings.daily_reset_minutes = storage::normalize_daily_reset_minutes(daily_reset_minutes);
+    settings.include_weekends_in_streak = include_weekends_in_streak;
     storage::save_settings(&app, &settings)?;
     Ok(settings)
 }
@@ -143,22 +153,16 @@ fn update_focus_preferences(
     skip_rest: bool,
     state: State<'_, AppState>,
 ) -> Result<storage::Settings, String> {
-    let existing = storage::load_settings(&app)?;
+    let mut settings = storage::load_settings(&app)?;
     let normalized_focus_minutes = focus_minutes.clamp(1, 720);
     let normalized_rest_minutes = if skip_rest {
         0
     } else {
         rest_minutes.clamp(1, 120)
     };
-    let settings = storage::Settings {
-        daily_goal_minutes: existing.daily_goal_minutes,
-        daily_reset_minutes: existing.daily_reset_minutes,
-        include_weekends_in_streak: existing.include_weekends_in_streak,
-        focus_minutes: normalized_focus_minutes,
-        rest_minutes: normalized_rest_minutes,
-        skip_rest,
-        git_sync_repo_path: existing.git_sync_repo_path,
-    };
+    settings.focus_minutes = normalized_focus_minutes;
+    settings.rest_minutes = normalized_rest_minutes;
+    settings.skip_rest = skip_rest;
     storage::save_settings(&app, &settings)?;
     let mut timer = state
         .timer
@@ -173,6 +177,107 @@ fn update_focus_preferences(
 }
 
 #[tauri::command]
+fn update_rest_overlay_preferences(
+    app: AppHandle,
+    rest_overlay_mode: storage::RestOverlayMode,
+    rest_overlay_image: Option<String>,
+    rest_overlay_html: Option<String>,
+) -> Result<storage::Settings, String> {
+    let mut settings = storage::load_settings(&app)?;
+    settings.rest_overlay_mode = rest_overlay_mode;
+    settings.rest_overlay_image = storage::normalize_optional_text(rest_overlay_image);
+    settings.rest_overlay_html = storage::normalize_optional_text(rest_overlay_html);
+    storage::save_settings(&app, &settings)?;
+    Ok(settings)
+}
+
+#[tauri::command]
+fn choose_rest_overlay_image(app: AppHandle) -> Result<Option<storage::Settings>, String> {
+    save_rest_overlay_asset(
+        &app,
+        storage::RestOverlayMode::Image,
+        file_picker::pick_rest_overlay_image()?,
+    )
+}
+
+#[tauri::command]
+fn choose_rest_overlay_html(app: AppHandle) -> Result<Option<storage::Settings>, String> {
+    save_rest_overlay_asset(
+        &app,
+        storage::RestOverlayMode::Html,
+        file_picker::pick_rest_overlay_html()?,
+    )
+}
+
+#[tauri::command]
+fn read_rest_overlay_html(app: AppHandle) -> Result<Option<String>, String> {
+    let settings = storage::load_settings(&app)?;
+    let Some(html_path) = settings
+        .rest_overlay_html
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    else {
+        return Ok(None);
+    };
+
+    if html_path.starts_with('<') {
+        return Ok(Some(html_path.to_string()));
+    }
+
+    let path = std::path::PathBuf::from(html_path);
+    if !path.is_file() {
+        return Err("The selected HTML file does not exist.".to_string());
+    }
+    if !rest_overlay_asset_matches(storage::RestOverlayMode::Html, &path) {
+        return Err("Please choose an HTML file.".to_string());
+    }
+
+    std::fs::read_to_string(path)
+        .map(Some)
+        .map_err(|error| format!("Failed to read rest screen HTML: {error}"))
+}
+
+#[tauri::command]
+fn read_rest_overlay_image_data_url(app: AppHandle) -> Result<Option<String>, String> {
+    let settings = storage::load_settings(&app)?;
+    let Some(image_path) = settings
+        .rest_overlay_image
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    else {
+        return Ok(None);
+    };
+
+    if image_path.starts_with("http:")
+        || image_path.starts_with("https:")
+        || image_path.starts_with("data:")
+        || image_path.starts_with("blob:")
+    {
+        return Ok(Some(image_path.to_string()));
+    }
+
+    let path = std::path::PathBuf::from(image_path);
+    if !path.is_file() {
+        return Err("The selected image file does not exist.".to_string());
+    }
+    if !rest_overlay_asset_matches(storage::RestOverlayMode::Image, &path) {
+        return Err("Please choose an image file.".to_string());
+    }
+
+    let mime_type =
+        rest_overlay_image_mime(&path).ok_or_else(|| "Please choose an image file.".to_string())?;
+    let bytes = std::fs::read(path)
+        .map_err(|error| format!("Failed to read rest screen image: {error}"))?;
+    Ok(Some(format!(
+        "data:{};base64,{}",
+        mime_type,
+        base64_encode(&bytes)
+    )))
+}
+
+#[tauri::command]
 fn get_daily_progress(app: AppHandle) -> Result<stats::DailyProgress, String> {
     let settings = storage::load_settings(&app)?;
     let records = storage::read_sessions(&app)?;
@@ -182,6 +287,170 @@ fn get_daily_progress(app: AppHandle) -> Result<stats::DailyProgress, String> {
 #[tauri::command]
 fn configure_git_sync_repository(app: AppHandle) -> Result<Option<storage::Settings>, String> {
     git_sync::configure_repository(&app)
+}
+
+fn save_rest_overlay_asset(
+    app: &AppHandle,
+    mode: storage::RestOverlayMode,
+    selected: Option<std::path::PathBuf>,
+) -> Result<Option<storage::Settings>, String> {
+    let Some(path) = selected else {
+        return Ok(None);
+    };
+
+    if !path.is_file() {
+        return Err("Please choose a file.".to_string());
+    }
+
+    if !rest_overlay_asset_matches(mode, &path) {
+        return Err(match mode {
+            storage::RestOverlayMode::Blur => "Please choose a file.".to_string(),
+            storage::RestOverlayMode::Image => "Please choose an image file.".to_string(),
+            storage::RestOverlayMode::Html => "Please choose an HTML file.".to_string(),
+        });
+    }
+
+    let mut settings = storage::load_settings(app)?;
+    let selected = path.to_string_lossy().into_owned();
+    settings.rest_overlay_mode = mode;
+    match mode {
+        storage::RestOverlayMode::Blur => {}
+        storage::RestOverlayMode::Image => settings.rest_overlay_image = Some(selected),
+        storage::RestOverlayMode::Html => settings.rest_overlay_html = Some(selected),
+    }
+    storage::save_settings(app, &settings)?;
+
+    Ok(Some(settings))
+}
+
+fn rest_overlay_asset_matches(mode: storage::RestOverlayMode, path: &std::path::Path) -> bool {
+    let Some(extension) = path.extension().and_then(|value| value.to_str()) else {
+        return false;
+    };
+    let extension = extension.to_ascii_lowercase();
+
+    match mode {
+        storage::RestOverlayMode::Blur => true,
+        storage::RestOverlayMode::Image => matches!(
+            extension.as_str(),
+            "png" | "jpg" | "jpeg" | "webp" | "gif" | "bmp" | "svg"
+        ),
+        storage::RestOverlayMode::Html => matches!(extension.as_str(), "html" | "htm"),
+    }
+}
+
+fn rest_overlay_image_mime(path: &std::path::Path) -> Option<&'static str> {
+    let extension = path.extension()?.to_str()?.to_ascii_lowercase();
+    match extension.as_str() {
+        "png" => Some("image/png"),
+        "jpg" | "jpeg" => Some("image/jpeg"),
+        "webp" => Some("image/webp"),
+        "gif" => Some("image/gif"),
+        "bmp" => Some("image/bmp"),
+        "svg" => Some("image/svg+xml"),
+        _ => None,
+    }
+}
+
+fn base64_encode(bytes: &[u8]) -> String {
+    const TABLE: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut output = String::with_capacity(bytes.len().div_ceil(3) * 4);
+
+    for chunk in bytes.chunks(3) {
+        let first = chunk[0];
+        let second = chunk.get(1).copied().unwrap_or(0);
+        let third = chunk.get(2).copied().unwrap_or(0);
+
+        output.push(TABLE[(first >> 2) as usize] as char);
+        output.push(TABLE[(((first & 0b0000_0011) << 4) | (second >> 4)) as usize] as char);
+
+        if chunk.len() > 1 {
+            output.push(TABLE[(((second & 0b0000_1111) << 2) | (third >> 6)) as usize] as char);
+        } else {
+            output.push('=');
+        }
+
+        if chunk.len() > 2 {
+            output.push(TABLE[(third & 0b0011_1111) as usize] as char);
+        } else {
+            output.push('=');
+        }
+    }
+
+    output
+}
+
+#[tauri::command]
+fn show_rest_overlay(
+    app: AppHandle,
+    duration_seconds: u32,
+    state: State<'_, AppState>,
+) -> Result<RestOverlayRequest, String> {
+    let duration_seconds = normalize_rest_overlay_duration(duration_seconds);
+    let request = {
+        let mut overlay = state
+            .rest_overlay
+            .lock()
+            .map_err(|_| "Rest overlay state is unavailable".to_string())?;
+        overlay.request_id = overlay.request_id.saturating_add(1);
+        overlay.visible = true;
+        overlay.duration_seconds = duration_seconds;
+        RestOverlayRequest {
+            request_id: overlay.request_id,
+            visible: overlay.visible,
+            duration_seconds: overlay.duration_seconds,
+        }
+    };
+
+    let overlay = app
+        .get_webview_window(REST_OVERLAY_WINDOW_LABEL)
+        .ok_or_else(|| "Rest overlay window was not found".to_string())?;
+    overlay
+        .set_always_on_top(true)
+        .map_err(|error| error.to_string())?;
+    overlay
+        .set_fullscreen(true)
+        .map_err(|error| error.to_string())?;
+    overlay.show().map_err(|error| error.to_string())?;
+    overlay.set_focus().map_err(|error| error.to_string())?;
+    app.emit_to(
+        REST_OVERLAY_WINDOW_LABEL,
+        REST_OVERLAY_SHOW_EVENT,
+        request.clone(),
+    )
+    .map_err(|error| error.to_string())?;
+
+    Ok(request)
+}
+
+#[tauri::command]
+fn hide_rest_overlay(app: AppHandle, state: State<'_, AppState>) -> Result<(), String> {
+    {
+        let mut overlay = state
+            .rest_overlay
+            .lock()
+            .map_err(|_| "Rest overlay state is unavailable".to_string())?;
+        overlay.visible = false;
+    }
+
+    if let Some(overlay) = app.get_webview_window(REST_OVERLAY_WINDOW_LABEL) {
+        overlay.hide().map_err(|error| error.to_string())?;
+    }
+
+    Ok(())
+}
+
+#[tauri::command]
+fn get_rest_overlay_request(state: State<'_, AppState>) -> Result<RestOverlayRequest, String> {
+    let overlay = state
+        .rest_overlay
+        .lock()
+        .map_err(|_| "Rest overlay state is unavailable".to_string())?;
+    Ok(RestOverlayRequest {
+        request_id: overlay.request_id,
+        visible: overlay.visible,
+        duration_seconds: overlay.duration_seconds,
+    })
 }
 
 fn append_records(
@@ -200,114 +469,12 @@ fn append_records(
     Ok(())
 }
 
-fn should_notify_session_completed(records: &[domain::SessionRecord]) -> bool {
-    records.iter().any(|record| {
-        record.status == domain::SessionRecordStatus::Completed
-            && record.time_type == domain::SessionTimeType::Focus
-    })
-}
-
-fn notify_session_completed(app: &AppHandle, records: &[domain::SessionRecord]) {
-    let focus_seconds = records
-        .iter()
-        .filter(|record| {
-            record.status == domain::SessionRecordStatus::Completed
-                && record.time_type == domain::SessionTimeType::Focus
-        })
-        .map(|record| record.actual_seconds)
-        .sum::<u64>();
-    let duration = completed_duration_label(focus_seconds);
-    let body = if duration.is_empty() {
-        "Nice work. Your focus session is complete.".to_string()
-    } else {
-        format!("Nice work. You completed {} of focused time.", duration)
-    };
-    let notification = app
-        .notification()
-        .builder()
-        .title("Focus session complete")
-        .body(body);
-
-    #[cfg(not(target_os = "windows"))]
-    let notification = if let Some(sound_path) = notification_sound_path() {
-        notification.sound(sound_path.to_string_lossy().into_owned())
-    } else {
-        notification
-    };
-
-    let _ = notification.show();
-    play_session_completion_sound();
-}
-
-fn completed_duration_label(seconds: u64) -> String {
-    let minutes = seconds / 60;
-    if minutes > 0 {
-        return format!("{} minute{}", minutes, if minutes == 1 { "" } else { "s" });
+fn normalize_rest_overlay_duration(duration_seconds: u32) -> u32 {
+    if duration_seconds == 0 {
+        return DEFAULT_SKIPPED_REST_OVERLAY_SECONDS;
     }
 
-    if seconds > 0 {
-        return format!("{} second{}", seconds, if seconds == 1 { "" } else { "s" });
-    }
-
-    String::new()
-}
-
-#[cfg(target_os = "windows")]
-fn play_session_completion_sound() {
-    use std::os::windows::ffi::OsStrExt;
-    use windows_sys::Win32::Media::Audio::{
-        PlaySoundW, SND_ALIAS, SND_ASYNC, SND_FILENAME, SND_NODEFAULT, SND_SYSTEM,
-    };
-
-    if let Some(sound_path) = notification_sound_path() {
-        let sound_path = sound_path
-            .as_os_str()
-            .encode_wide()
-            .chain(std::iter::once(0))
-            .collect::<Vec<_>>();
-        let played = unsafe {
-            PlaySoundW(
-                sound_path.as_ptr(),
-                std::ptr::null_mut(),
-                SND_FILENAME | SND_ASYNC | SND_NODEFAULT | SND_SYSTEM,
-            )
-        };
-
-        if played != 0 {
-            return;
-        }
-    }
-
-    let alias = "SystemNotification"
-        .encode_utf16()
-        .chain(std::iter::once(0))
-        .collect::<Vec<_>>();
-    let _ = unsafe {
-        PlaySoundW(
-            alias.as_ptr(),
-            std::ptr::null_mut(),
-            SND_ALIAS | SND_ASYNC | SND_SYSTEM,
-        )
-    };
-}
-
-#[cfg(not(target_os = "windows"))]
-fn play_session_completion_sound() {}
-
-fn notification_sound_path() -> Option<std::path::PathBuf> {
-    #[cfg(target_os = "windows")]
-    {
-        let windir = std::env::var_os("WINDIR")?;
-        let sound_path = std::path::PathBuf::from(windir)
-            .join("Media")
-            .join("Windows Notify System Generic.wav");
-
-        if sound_path.exists() {
-            return Some(sound_path);
-        }
-    }
-
-    None
+    duration_seconds.clamp(1, MAX_REST_OVERLAY_SECONDS)
 }
 
 fn persist_active_timer_before_exit(app: &AppHandle) -> Result<(), String> {
@@ -475,8 +642,16 @@ fn main() {
             get_settings,
             update_daily_goal,
             update_focus_preferences,
+            update_rest_overlay_preferences,
+            choose_rest_overlay_image,
+            choose_rest_overlay_html,
+            read_rest_overlay_html,
+            read_rest_overlay_image_data_url,
             get_daily_progress,
             configure_git_sync_repository,
+            show_rest_overlay,
+            hide_rest_overlay,
+            get_rest_overlay_request,
             show_floating_timer,
             hide_floating_timer,
             focus_main_window,

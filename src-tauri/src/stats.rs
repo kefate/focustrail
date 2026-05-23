@@ -136,6 +136,9 @@ mod tests {
             focus_minutes: 30,
             rest_minutes: 5,
             skip_rest: false,
+            rest_overlay_mode: crate::storage::RestOverlayMode::Blur,
+            rest_overlay_image: None,
+            rest_overlay_html: None,
             git_sync_repo_path: None,
         }
     }

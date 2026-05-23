@@ -26,7 +26,8 @@ body,
 
 button,
 input,
-select {
+select,
+textarea {
   font: inherit;
 }
 
@@ -43,12 +44,18 @@ button:disabled {
 }
 
 input,
-select {
+select,
+textarea {
   min-height: 32px;
   border: 1px solid #d4d4d4;
   border-radius: 4px;
   background: #ffffff;
   color: #111111;
+}
+
+textarea {
+  padding: 7px 8px;
+  resize: vertical;
 }
 
 .desktop-main {
@@ -383,6 +390,7 @@ select {
   justify-items: center;
   align-content: center;
   gap: 14px;
+  width: 100%;
   min-height: 0;
   padding: 2px 8px 0;
   text-align: center;
@@ -763,7 +771,7 @@ select {
   font-size: 13px;
 }
 
-.git-sync-control {
+.settings-control {
   position: fixed;
   left: 18px;
   bottom: 10px;
@@ -774,7 +782,7 @@ select {
   max-width: calc(100vw - 36px);
 }
 
-.git-sync-button {
+.settings-trigger {
   position: relative;
   display: grid;
   width: 32px;
@@ -789,11 +797,12 @@ select {
   line-height: 1;
 }
 
-.git-sync-button:hover {
+.settings-trigger:hover,
+.settings-trigger[aria-expanded="true"] {
   background: #eeeeee;
 }
 
-.git-sync-dot {
+.settings-status-dot {
   position: absolute;
   right: 5px;
   bottom: 5px;
@@ -804,12 +813,73 @@ select {
   background: #9f9f9f;
 }
 
-.git-sync-button.configured .git-sync-dot {
+.settings-trigger.configured .settings-status-dot {
   background: #20c7a4;
 }
 
-.git-sync-notice {
-  max-width: min(260px, calc(100vw - 76px));
+.settings-popover {
+  position: absolute;
+  left: 0;
+  bottom: 40px;
+  display: grid;
+  gap: 12px;
+  width: min(330px, calc(100vw - 36px));
+  padding: 12px;
+  border: 1px solid #d8d8d8;
+  border-radius: 8px;
+  background: #ffffff;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.14);
+}
+
+.settings-section {
+  display: grid;
+  gap: 8px;
+}
+
+.settings-section + .settings-section {
+  padding-top: 12px;
+  border-top: 1px solid #eeeeee;
+}
+
+.settings-section header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.settings-section header span {
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.settings-section header button {
+  min-height: 28px;
+  padding: 0 10px;
+  border: 1px solid #d3d3d3;
+  border-radius: 4px;
+  background: #ffffff;
+  font-size: 12px;
+}
+
+.settings-section header button:hover,
+.rest-screen-modes button:hover {
+  background: #eeeeee;
+}
+
+.settings-section p {
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  margin: 0;
+  color: #555555;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.settings-notice {
+  max-width: 100%;
   overflow: hidden;
   padding: 7px 9px;
   border: 1px solid #d7e5dc;
@@ -819,6 +889,26 @@ select {
   font-size: 12px;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.rest-screen-modes {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+}
+
+.rest-screen-modes button {
+  min-height: 30px;
+  border: 1px solid #d5d5d5;
+  border-radius: 4px;
+  background: #ffffff;
+  font-size: 12px;
+}
+
+.rest-screen-modes .selected {
+  border-color: #0067b8;
+  background: #e8f3ff;
+  color: #003f6f;
 }
 
 .floating-shell {
@@ -978,6 +1068,74 @@ select {
   font-size: 12px;
 }
 
+.rest-overlay-screen {
+  position: relative;
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+  background: rgba(12, 14, 16, 0.44);
+  backdrop-filter: blur(22px) saturate(0.95);
+  -webkit-backdrop-filter: blur(22px) saturate(0.95);
+}
+
+.rest-overlay-image-mode,
+.rest-overlay-html-mode {
+  background: #0b0d0f;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+.rest-overlay-image,
+.rest-overlay-html {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border: 0;
+}
+
+.rest-overlay-image {
+  object-fit: cover;
+}
+
+.rest-overlay-close {
+  position: absolute;
+  top: 18px;
+  right: 18px;
+  z-index: 3;
+  display: grid;
+  width: 44px;
+  height: 44px;
+  place-items: center;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.62);
+  opacity: 0.68;
+}
+
+.rest-overlay-close:hover,
+.rest-overlay-close:focus-visible {
+  background: rgba(255, 255, 255, 0.14);
+  color: rgba(255, 255, 255, 0.88);
+  opacity: 1;
+}
+
+.rest-overlay-close span {
+  position: absolute;
+  width: 19px;
+  height: 2px;
+  border-radius: 999px;
+  background: currentColor;
+}
+
+.rest-overlay-close span:first-child {
+  transform: rotate(45deg);
+}
+
+.rest-overlay-close span:last-child {
+  transform: rotate(-45deg);
+}
+
 @media (max-width: 190px), (max-height: 190px) {
   .floating-dial .dial-tick-long {
     display: none;
@@ -995,7 +1153,7 @@ select {
     overflow: hidden;
   }
 
-  .git-sync-control {
+  .settings-control {
     left: 16px;
     bottom: 8px;
   }
